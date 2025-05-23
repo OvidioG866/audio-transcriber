@@ -140,88 +140,6 @@ class OpenAIClient:
                 else:
                     raise Exception(f"Failed to generate text after {MAX_RETRIES} attempts: {str(e)}")
     
-    def generate_completion(
-        self,
-        prompt: str,
-        model: str = "gpt-3.5-turbo-instruct",
-        max_tokens: int = 1000,
-        temperature: float = 0.7,
-        top_p: float = 1.0,
-        frequency_penalty: float = 0.0,
-        presence_penalty: float = 0.0,
-        stop: Optional[List[str]] = None
-    ) -> str:
-        """
-        Generate text completion using legacy completions endpoint
-        
-        Args:
-            prompt: Input prompt
-            model: OpenAI model (for completions endpoint)
-            max_tokens: Maximum tokens in response
-            temperature: Sampling temperature
-            top_p: Nucleus sampling parameter
-            frequency_penalty: Frequency penalty
-            presence_penalty: Presence penalty
-            stop: Stop sequences
-            
-        Returns:
-            Generated text string
-        """
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "frequency_penalty": frequency_penalty,
-            "presence_penalty": presence_penalty
-        }
-        
-        if stop:
-            payload["stop"] = stop
-        
-        for attempt in range(MAX_RETRIES):
-            try:
-                logger.info(f"Generating completion (attempt {attempt + 1}/{MAX_RETRIES})")
-                
-                response = requests.post(
-                    f"{self.base_url}/completions",
-                    headers=self.headers,
-                    json=payload,
-                    timeout=60
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    if "choices" in data and len(data["choices"]) > 0:
-                        generated_text = data["choices"][0]["text"].strip()
-                        
-                        logger.info(f"Completion generated successfully ({len(generated_text)} characters)")
-                        return generated_text
-                    else:
-                        raise Exception("No valid response in API result")
-                
-                else:
-                    error_msg = f"API request failed with status {response.status_code}"
-                    try:
-                        error_data = response.json()
-                        if "error" in error_data:
-                            error_msg += f": {error_data['error'].get('message', 'Unknown error')}"
-                    except:
-                        pass
-                    
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(RETRY_DELAY * (attempt + 1))
-                    else:
-                        raise Exception(error_msg)
-                        
-            except Exception as e:
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (attempt + 1))
-                else:
-                    raise Exception(f"Failed to generate completion after {MAX_RETRIES} attempts: {str(e)}")
-    
     def get_available_models(self) -> List[str]:
         """
         Get list of available OpenAI models
@@ -248,64 +166,98 @@ class OpenAIClient:
         except Exception as e:
             logger.error(f"Error retrieving models: {str(e)}")
             return []
-    
-    def count_tokens(self, text: str) -> int:
-        """
-        Estimate token count for text (rough approximation)
-        
-        Args:
-            text: Text to count tokens for
-            
-        Returns:
-            Estimated token count
-        """
-        # Rough estimation: 1 token ≈ 4 characters for English text
-        return len(text) // 4
+
+# Legacy functions for backward compatibility
+import glob
+from pathlib import Path
+import sys
+
+def check_api_keys():
+    """Check if required API keys are set in environment variables."""
+    openai_key = os.getenv('OPENAI_API_KEY')
+
+    if not openai_key:
+        logger.error("OPENAI_API_KEY is not set in environment variables")
+        raise ValueError("OPENAI_API_KEY is not set in environment variables")
+
+    return openai_key
+
+# For backward compatibility with existing scripts
+try:
+    from openai import OpenAI
+    # Set up API clients
+    client = OpenAI(api_key=OPENAI_API_KEY)
+except:
+    pass
+
+def read_article(file_path):
+    """Read and parse article content from a text file."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    # Assuming first line is title and rest is excerpt
+    title, excerpt = content.split('\n', 1)
+    return title.strip(), excerpt.strip()
+
+def generate_podcast_script(title, content):
+    """Generate podcast script using OpenAI API."""
+    try:
+        prompt = f"""Write a concise, spoken-style summary suitable for audio narration. The tone should be informative, slightly conversational, use data if provided. Keep the total output under 640 characters.
+
+Title: {title}
+Content: {content}
+
+Structure:
+- Brief headline rephrasing (1 sentence).
+- Context (1–2 sentences).
+- Main point breakdown (2–4 sentences).
+- Possible consequences (1 sentence)."""
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a professional podcast script writer. Keep responses concise and under 640 characters."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+
+        script = response.choices[0].message.content.strip()
+        logger.info(f"Generated script for article: {title[:50]}...")
+        return script
+
+    except Exception as e:
+        logger.error(f"Error generating script: {str(e)}")
+        raise
 
 def main():
-    """Command-line interface for OpenAI text generation"""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="OpenAI Text Generator")
-    parser.add_argument("--prompt", "-p", required=True, help="Text prompt for generation")
-    parser.add_argument("--model", "-m", default="gpt-3.5-turbo", help="OpenAI model to use")
-    parser.add_argument("--max-tokens", type=int, default=1000, help="Maximum tokens to generate")
-    parser.add_argument("--temperature", type=float, default=0.7, help="Temperature (0.0-2.0)")
-    parser.add_argument("--list-models", action="store_true", help="List available models")
-    
-    args = parser.parse_args()
-    
+    # Process only the first article file
+    article_files = glob.glob("scraped_articles/*.txt")
+    if not article_files:
+        print("No article files found in scraped_articles directory")
+        return
+
+    article_file = article_files[0]
+    print(f"Processing test article: {article_file}")
+
+    # Read article
+    title, excerpt = read_article(article_file)
+
+    # Generate podcast script
     try:
-        client = OpenAIClient()
-        
-        if args.list_models:
-            models = client.get_available_models()
-            print("\nAvailable Models:")
-            print("-" * 40)
-            for model in models:
-                print(f"  {model}")
-            return 0
-        
-        # Generate text
-        result = client.generate_text(
-            prompt=args.prompt,
-            model=args.model,
-            max_tokens=args.max_tokens,
-            temperature=args.temperature
-        )
-        
-        print("\n" + "="*50)
-        print("GENERATED TEXT:")
-        print("="*50)
-        print(result)
-        print("="*50)
-        
-        return 0
-        
+        script = generate_podcast_script(title, excerpt)
+        print("\nGenerated script:")
+        print("-"*30)
+        print(script)
+        print("-"*30)
+        print(f"Character count: {len(script)}")
+
+        # Save the script to a file
+        with open("generated_script.txt", "w", encoding="utf-8") as f:
+            f.write(script)
+        print("\nScript saved to generated_script.txt")
     except Exception as e:
-        logger.error(f"Command-line execution failed: {str(e)}")
-        print(f"Error: {str(e)}")
-        return 1
+        print(f"Error generating script: {str(e)}")
 
 if __name__ == "__main__":
-    exit(main())
+    main()
