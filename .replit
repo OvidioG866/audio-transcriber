@@ -1,0 +1,39 @@
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-24_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Audio Generator Setup"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "audio_generator_test"
+
+[[workflows.workflow]]
+name = "Audio Generator Setup"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install elevenlabs requests openai && python audio_generator.py"
+
+[[workflows.workflow]]
+name = "audio_generator_test"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install elevenlabs openai requests && python audio_generator.py"
+
+[deployment]
+run = ["sh", "-c", "pip install elevenlabs requests openai && python audio_generator.py"]
