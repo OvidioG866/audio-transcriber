@@ -126,12 +126,15 @@ class ElevenLabsTTS:
                 logger.debug(f"Voice ID: {voice_id}, Model: {model_id}")
                 
                 # Generate audio using the ElevenLabs client's text-to-speech method
-                audio_bytes = self.client.text_to_speech.convert(
+                audio_generator = self.client.text_to_speech.convert(
                     voice_id=voice_id,
                     text=text,
                     model_id=model_id,
                     voice_settings=voice_config
                 )
+                
+                # Convert generator to bytes
+                audio_bytes = b"".join(audio_generator)
                 logger.info(f"Audio generated successfully ({len(audio_bytes)} bytes)")
                 return audio_bytes
                 
