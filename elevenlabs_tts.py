@@ -126,6 +126,7 @@ class ElevenLabsTTS:
                 logger.debug(f"Voice ID: {voice_id}, Model: {model_id}")
                 
                 # Generate audio using the ElevenLabs client's text-to-speech method
+                print(f"🎵 Generating audio with ElevenLabs (attempt {attempt + 1})...")
                 audio_generator = self.client.text_to_speech.convert(
                     voice_id=voice_id,
                     text=text,
@@ -135,6 +136,7 @@ class ElevenLabsTTS:
                 
                 # Convert generator to bytes
                 audio_bytes = b"".join(audio_generator)
+                print(f"✅ Audio generated successfully ({len(audio_bytes)} bytes)")
                 logger.info(f"Audio generated successfully ({len(audio_bytes)} bytes)")
                 return audio_bytes
                 
@@ -170,16 +172,21 @@ class ElevenLabsTTS:
         # Ensure filename is safe and not too long
         filename = self._sanitize_filename(filename)
         
+        # Ensure output directory exists
+        output_dir.mkdir(exist_ok=True)
         output_path = output_dir / filename
         
         try:
+            print(f"💾 Saving audio file to: {output_path}")
             with open(output_path, "wb") as f:
                 f.write(audio_data)
             
+            print(f"✅ Audio file saved successfully: {output_path}")
             logger.info(f"Audio saved to: {output_path}")
             return output_path
             
         except Exception as e:
+            print(f"❌ Failed to save audio file: {str(e)}")
             logger.error(f"Failed to save audio file: {str(e)}")
             raise
     
@@ -205,6 +212,7 @@ class ElevenLabsTTS:
             Path to saved file if save_file=True, None otherwise
         """
         try:
+            print("🎤 Starting text-to-speech conversion...")
             # Generate audio
             audio_data = self.generate_audio(
                 text=text,
@@ -213,12 +221,16 @@ class ElevenLabsTTS:
             )
             
             if save_file:
+                print("💾 Saving audio file...")
                 # Save to file
-                return self.save_audio(audio_data, output_filename)
+                saved_path = self.save_audio(audio_data, output_filename)
+                print(f"🎉 Audio generation complete! Saved to: {saved_path}")
+                return saved_path
             else:
                 return audio_data
                 
         except Exception as e:
+            print(f"❌ Audio generation failed: {str(e)}")
             logger.error(f"Text-to-speech conversion failed: {str(e)}")
             raise
     
