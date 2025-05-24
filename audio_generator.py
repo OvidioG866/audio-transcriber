@@ -5,7 +5,7 @@ Combines OpenAI text generation with ElevenLabs audio synthesis
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
-from elevenlabs_tts import ElevenLabsTTS
+from unrealspeech_tts import UnrealSpeechTTS
 from openAI import OpenAIClient
 from config import *
 
@@ -17,19 +17,19 @@ class AudioGenerator:
     def __init__(
         self,
         openai_api_key: Optional[str] = None,
-        elevenlabs_api_key: Optional[str] = None
+        unrealspeech_api_key: Optional[str] = None
     ):
         """
         Initialize Audio Generator with both APIs
         
         Args:
             openai_api_key: OpenAI API key
-            elevenlabs_api_key: ElevenLabs API key
+            unrealspeech_api_key: UnrealSpeech API key
         """
         self.openai_client = OpenAIClient(api_key=openai_api_key)
-        self.tts_client = ElevenLabsTTS(api_key=elevenlabs_api_key)
+        self.tts_client = UnrealSpeechTTS(api_key=unrealspeech_api_key)
         
-        logger.info("Audio Generator initialized with OpenAI and ElevenLabs clients")
+        logger.info("Audio Generator initialized with OpenAI and UnrealSpeech clients")
     
     def generate_text_and_audio(
         self,
@@ -82,15 +82,14 @@ class AudioGenerator:
             if save_text:
                 text_file_path = self._save_text_files(prompt, generated_text)
             
-            # Convert text to audio using ElevenLabs
-            print("🎵 Converting text to audio with ElevenLabs...")
-            logger.info("Converting text to audio with ElevenLabs")
+            # Convert text to audio using UnrealSpeech
+            print("🎵 Converting text to audio with UnrealSpeech...")
+            logger.info("Converting text to audio with UnrealSpeech")
             
             audio_path = self.tts_client.text_to_speech(
                 text=generated_text,
                 output_filename=output_filename,
-                voice_id=voice_id,
-                voice_settings=voice_settings
+                voice_id=voice_id
             )
             
             result = {
