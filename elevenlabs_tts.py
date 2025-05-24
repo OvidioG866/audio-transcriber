@@ -127,6 +127,8 @@ class ElevenLabsTTS:
                 
                 # Generate audio using the ElevenLabs client's text-to-speech method
                 print(f"🎵 Generating audio with ElevenLabs (attempt {attempt + 1})...")
+                
+                # Use the correct text_to_speech method that's available
                 audio_generator = self.client.text_to_speech.convert(
                     voice_id=voice_id,
                     text=text,
@@ -134,8 +136,9 @@ class ElevenLabsTTS:
                     voice_settings=voice_config
                 )
                 
-                # Convert generator to bytes
-                audio_bytes = b"".join(audio_generator)
+                # Convert generator to bytes properly
+                audio_bytes = b"".join(chunk for chunk in audio_generator)
+                
                 print(f"✅ Audio generated successfully ({len(audio_bytes)} bytes)")
                 logger.info(f"Audio generated successfully ({len(audio_bytes)} bytes)")
                 return audio_bytes
