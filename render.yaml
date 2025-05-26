@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ai-radio-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: UNREALSPEECH_API_KEY
+        sync: false
+      - key: FT_USERNAME
+        sync: false
+      - key: FT_UNI_ID
+        sync: false
+      - key: FT_PASSWORD
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:///./ai_radio.db
+      - key: AUDIO_STORAGE_PATH
+        value: ./audio_outputs
+      - key: ARTICLE_STORAGE_PATH
+        value: ./scraped_articles
+      - key: PRIORITY_STORAGE_PATH
+        value: ./priority_lists 

@@ -125,7 +125,13 @@ def read_article(file_path):
 def generate_podcast_script(title, content):
     """Generate podcast script using OpenAI API."""
     try:
-        prompt = f"""Write a concise, spoken-style summary suitable for audio narration. The tone should be informative, slightly conversational, use data if provided. Keep the total output under 640 characters.
+        # Initialize the OpenAI client
+        client = OpenAIClient()
+        
+        prompt = f"""Write a concise, spoken-style summary suitable for audio narration. The tone should be informative, slightly conversational, use data if provided. Keep the total output under 1200 characters. Do not use introductionary words such as "headline" or "context".
+
+Article Title: {title}
+Article Content: {content}
 
 Structure:
 - Brief headline rephrasing (1 sentence).
@@ -133,17 +139,13 @@ Structure:
 - Main point breakdown (2–4 sentences).
 - Possible consequences (1 sentence)."""
 
-        response = client.chat.completions.create(
+        script = client.generate_text(
+            prompt=prompt,
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a professional podcast script writer. Keep responses concise and under 640 characters."},
-                {"role": "user", "content": prompt}
-            ],
             max_tokens=300,
             temperature=0.7
         )
-
-        script = response.choices[0].message.content.strip()
+        
         logger.info(f"Generated script for article: {title[:50]}...")
         return script
 

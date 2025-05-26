@@ -8,6 +8,10 @@ from typing import Optional, Dict, Any, List, Union
 from unrealspeech_tts import UnrealSpeechTTS
 from openAI import OpenAIClient
 from config import *
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

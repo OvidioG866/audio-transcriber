@@ -28,7 +28,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 # Logging Configuration
-LOG_LEVEL = "INFO"
+LOG_LEVEL = "DEBUG"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # File Management

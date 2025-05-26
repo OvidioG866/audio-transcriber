@@ -3,12 +3,17 @@ from typing import List, Dict, Tuple
 import re
 from collections import defaultdict
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Article:
     title: str
     content: str
     original_position: int
+    url: str = ""
+    summary: str = ""
     score: float = 0.0
 
 class GeopoliticalPrioritizer:
@@ -19,7 +24,7 @@ class GeopoliticalPrioritizer:
                 "weight": 1.0,
                 "keywords": [
                     # General military terms
-                    "military", "defense", "armed forces", "security", "militia",
+                    "military", "defense", "armed forces", "security", "militia", "militant", "defence",
                     # Conflict and warfare
                     "war", "conflict", "combat", "battle", "hostilities", "invasion", "attack", "strike",
                     "operation", "troop movements", "cyberwarfare", "cyber warfare",
@@ -35,7 +40,11 @@ class GeopoliticalPrioritizer:
                     # Advanced weapons
                     "nuclear weapon", "chemical weapon", "biological weapon", "explosive", "cluster bomb",
                     "landmine", "bomb", "torpedo", "surface-to-air missile", "SAM", "intercontinental ballistic missile",
-                    "ICBM", "grenade launcher"
+                    "ICBM", "grenade launcher",
+                    # Intelligence
+                    "spy", "sping", "intelligence", "secret service", "cia", "mi6", "nato"
+                    # Countries of interest
+                    "italy", "italia", "italian", "taiwan", "palestine", "gaza", "fed"
                 ]
             },
             "Energy": {
@@ -63,7 +72,11 @@ class GeopoliticalPrioritizer:
                     "minerals", "rare earth", "lithium", "cobalt", "nickel", "copper",
                     "natural resources", "mining",
                     # Supply chain
-                    "supply chain", "commodities", "exports", "imports"
+                    "supply chain", "commodities", "exports", "imports",
+                    # Migrants
+                    "migrants", "asylum" 
+                    # Dictators
+                    "putin", "iran", "china", "russia", "israel", "netanyahu", "hizbollah", "turkey"
                 ]
             },
             "Tech & Innovation": {
@@ -107,6 +120,8 @@ class GeopoliticalPrioritizer:
                     # Political stability
                     "political", "political party", "political instability", "political unrest",
                     "protest", "revolution", "civil unrest", "coup", "authoritarian"
+                
+
                 ]
             },
             "Bond Markets": {
@@ -114,7 +129,7 @@ class GeopoliticalPrioritizer:
                 "keywords": [
                     # Market terms
                     "bonds", "bond market", "yield", "yield curve", "treasury", "government bonds",
-                    "corporate bonds", "junk bonds", "investment grade",
+                    "corporate bonds", "junk bonds", "investment grade", "tresuries",
                     # Risk and analysis
                     "liquidity", "credit risk", "default risk", "interest rate", "bond yields",
                     "spread", "fixed income", "debt market",
@@ -199,47 +214,76 @@ class GeopoliticalPrioritizer:
         text = text.lower()
         return sum(1 for keyword in keywords if keyword.lower() in text)
 
-    def _calculate_position_score(self, position: int, total_articles: int) -> float:
-        """Calculate score based on article position (earlier = higher score)."""
-        return 1.0 - (position / total_articles)
+    def _calculate_keyword_score(self, article: Article) -> float:
+        """Calculate score based on keyword matches."""
+        total_score = 0.0
+        for category, data in self.categories.items():
+            keyword_matches = self._count_keyword_matches(
+                f"{article.title} {article.content}",
+                data["keywords"]
+            )
+            category_score = keyword_matches * data["weight"]
+            total_score += category_score
+        return total_score
 
-    def prioritize_articles(self, articles: List[Tuple[str, str, int]]) -> List[Article]:
-        """
-        Prioritize articles based on category matches and position.
+    def _calculate_source_score(self, article: Article) -> float:
+        """Calculate source score based on article source."""
+        # This method needs to be implemented based on the actual implementation
+        return 0.0
 
-        Args:
-            articles: List of tuples containing (title, content, original_position)
+    def _calculate_topic_score(self, article: Article) -> float:
+        """Calculate topic score based on article topic."""
+        # This method needs to be implemented based on the actual implementation
+        return 0.0
 
-        Returns:
-            List of Article objects sorted by score
-        """
-        processed_articles = []
+    def _calculate_length_score(self, article: Article) -> float:
+        """Calculate length score based on article length."""
+        # This method needs to be implemented based on the actual implementation
+        return 0.0
+
+    def prioritize_articles(self, articles: List[Article]) -> List[Article]:
+        """Prioritize articles based on various factors."""
+        if not articles:
+            return []
+
         total_articles = len(articles)
+        logger.info(f"Prioritizing {total_articles} articles")
 
-        for title, content, position in articles:
-            article = Article(title=title, content=content, original_position=position)
-            total_score = 0.0
-
-            # Calculate category scores
-            for category, data in self.categories.items():
-                keyword_matches = self._count_keyword_matches(
-                    f"{title} {content}",
-                    data["keywords"]
-                )
-                category_score = keyword_matches * data["weight"]
-                total_score += category_score
-
-            # Add position score (weighted at 20% of total)
-            position_score = self._calculate_position_score(position, total_articles)
-            total_score += position_score * 0.2
-
-            article.score = total_score
-            processed_articles.append(article)
+        for i, article in enumerate(articles):
+            # Calculate base score from keywords
+            base_score = self._calculate_keyword_score(article)
+            
+            # Calculate source score
+            source_score = self._calculate_source_score(article)
+            
+            # Calculate topic score
+            topic_score = self._calculate_topic_score(article)
+            
+            # Calculate length score
+            length_score = self._calculate_length_score(article)
+            
+            # Calculate final score with weights (adjusted to remove recency)
+            final_score = (
+                base_score * 0.4 +  # Increased from 0.3 to 0.4
+                source_score * 0.25 +  # Increased from 0.2 to 0.25
+                topic_score * 0.2 +  # Increased from 0.15 to 0.2
+                length_score * 0.15  # Increased from 0.1 to 0.15
+            )
+            
+            article.score = final_score
+            logger.debug(f"Article '{article.title}' scored {final_score:.2f}")
 
         # Sort articles by score in descending order
-        return sorted(processed_articles, key=lambda x: x.score, reverse=True)
+        sorted_articles = sorted(articles, key=lambda x: x.score, reverse=True)
+        
+        # Log all articles with their scores
+        logger.info("\nAll articles by priority:")
+        for i, article in enumerate(sorted_articles, 1):
+            logger.info(f"{i}. Score: {article.score:.2f} - {article.title[:100]}...")
+        
+        return sorted_articles
 
-def read_articles_from_folder(folder_path: str) -> List[Tuple[str, str, int]]:
+def read_articles_from_folder(folder_path: str) -> List[Article]:
     """
     Read articles from the scraped_articles folder.
 
@@ -247,13 +291,25 @@ def read_articles_from_folder(folder_path: str) -> List[Tuple[str, str, int]]:
         folder_path: Path to the folder containing article files
 
     Returns:
-        List of tuples containing (title, content, original_position)
+        List of Article objects
     """
     articles = []
 
     # Get all article files and sort them by their position number
-    article_files = [f for f in os.listdir(folder_path) if f.startswith('article_')]
-    article_files.sort(key=lambda x: int(x.split('_')[1]))
+    # Exclude priority list files and only get actual article files
+    article_files = [
+        f for f in os.listdir(folder_path) 
+        if f.startswith('article_') and not f.startswith('article_priority_')
+    ]
+    
+    # Sort files by their position number, handling potential errors
+    def get_position(filename):
+        try:
+            return int(filename.split('_')[1])
+        except (IndexError, ValueError):
+            return float('inf')  # Put files with invalid positions at the end
+    
+    article_files.sort(key=get_position)
 
     for file_name in article_files:
         file_path = os.path.join(folder_path, file_name)
@@ -261,19 +317,43 @@ def read_articles_from_folder(folder_path: str) -> List[Tuple[str, str, int]]:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # Extract title and content
-            # Assuming first line is title and rest is content
+            # Extract title, URL, and summary
             lines = content.split('\n')
-            title = lines[0].strip()
-            article_content = '\n'.join(lines[1:]).strip()
+            title = ""
+            url = ""
+            summary = ""
+            content_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('Title: '):
+                    title = line[7:].strip()
+                elif line.startswith('URL: '):
+                    url = line[5:].strip()
+                elif line.startswith('Summary: '):
+                    summary = line[9:].strip()
+                elif line != '='*50:  # Skip the separator line
+                    content_lines.append(line)
+            
+            article_content = '\n'.join(content_lines).strip()
 
             # Extract position from filename (e.g., "article_1_" -> 1)
-            position = int(file_name.split('_')[1])
+            try:
+                position = int(file_name.split('_')[1])
+            except (IndexError, ValueError):
+                logger.warning(f"Could not extract position from filename: {file_name}")
+                position = len(articles) + 1
 
-            articles.append((title, article_content, position))
+            articles.append(Article(
+                title=title,
+                content=article_content,
+                original_position=position,
+                url=url,
+                summary=summary
+            ))
 
         except Exception as e:
-            print(f"Error reading file {file_name}: {str(e)}")
+            logger.error(f"Error reading file {file_name}: {str(e)}")
 
     return articles
 

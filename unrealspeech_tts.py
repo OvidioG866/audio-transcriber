@@ -30,6 +30,10 @@ class UnrealSpeechTTS:
         if not self.api_key:
             raise ValueError("UnrealSpeech API key is required. Set UNREALSPEECH_API_KEY environment variable.")
         
+        # Debug logging
+        logger.debug(f"API Key length: {len(self.api_key)}")
+        logger.debug(f"API Key first 4 chars: {self.api_key[:4]}")
+        
         self.base_url = "https://api.v8.unrealspeech.com"
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -84,7 +88,7 @@ class UnrealSpeechTTS:
     def generate_audio(
         self,
         text: str,
-        voice_id: str = "Scarlett",
+        voice_id: str = "Sierra",
         bitrate: str = "192k",
         speed: float = 0.0,
         pitch: float = 1.0,
@@ -95,7 +99,7 @@ class UnrealSpeechTTS:
         
         Args:
             text: Text to convert to speech
-            voice_id: UnrealSpeech voice ID
+            voice_id: UnrealSpeech voice ID (must be one of: Eleanor, Melody, Javier, Amelia, Sierra, etc.)
             bitrate: Audio bitrate (128k, 192k, 256k, 320k)
             speed: Speech speed (-1.0 to 1.0)
             pitch: Speech pitch (0.5 to 2.0)
@@ -110,14 +114,30 @@ class UnrealSpeechTTS:
         if not text.strip():
             raise ValueError("Text cannot be empty")
         
+        # Ensure parameters are within valid ranges
+        if not -1.0 <= speed <= 1.0:
+            raise ValueError("Speed must be between -1.0 and 1.0")
+        if not 0.5 <= pitch <= 2.0:
+            raise ValueError("Pitch must be between 0.5 and 2.0")
+        if bitrate not in ["128k", "192k", "256k", "320k"]:
+            raise ValueError("Bitrate must be one of: 128k, 192k, 256k, 320k")
+        if codec not in ["libmp3lame", "pcm_mulaw", "pcm_alaw"]:
+            raise ValueError("Codec must be one of: libmp3lame, pcm_mulaw, pcm_alaw")
+        
+        # Format payload according to API documentation
         payload = {
-            "Text": text,
+            "Text": text,  # API expects capitalized field names
             "VoiceId": voice_id,
             "Bitrate": bitrate,
             "Speed": speed,
             "Pitch": pitch,
             "Codec": codec
         }
+        
+        # Log request details
+        logger.debug(f"Request URL: {self.base_url}/stream")
+        logger.debug(f"Request Headers: {json.dumps(self.headers, indent=2)}")
+        logger.debug(f"Request Payload: {json.dumps(payload, indent=2)}")
         
         for attempt in range(MAX_RETRIES):
             try:
@@ -145,7 +165,9 @@ class UnrealSpeechTTS:
                     continue
                 
                 elif response.status_code == 401:
-                    raise Exception("Invalid API key")
+                    error_msg = "Invalid API key. Please check your UNREALSPEECH_API_KEY"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
                 
                 else:
                     error_msg = f"API request failed with status {response.status_code}"
@@ -153,10 +175,15 @@ class UnrealSpeechTTS:
                         error_data = response.json()
                         if "error" in error_data:
                             error_msg += f": {error_data['error']}"
+                        elif "message" in error_data:
+                            error_msg += f": {error_data['message']}"
+                        elif "detail" in error_data:
+                            error_msg += f": {error_data['detail']}"
                     except:
                         pass
                     
                     logger.warning(f"Attempt {attempt + 1} failed: {error_msg}")
+                    logger.debug(f"Response content: {response.text}")
                     
                     if attempt < MAX_RETRIES - 1:
                         time.sleep(RETRY_DELAY * (attempt + 1))
@@ -222,52 +249,71 @@ class UnrealSpeechTTS:
     def text_to_speech(
         self,
         text: str,
-        output_filename: Optional[str] = None,
-        voice_id: str = "Scarlett",
+        voice_id: str = "Sierra",
         bitrate: str = "192k",
         speed: float = 0.0,
         pitch: float = 1.0,
-        save_file: bool = True
-    ) -> Optional[Path]:
+        codec: str = "libmp3lame",
+        output_filename: Optional[str] = None,
+        output_dir: Optional[str] = None
+    ) -> Path:
         """
-        Complete text-to-speech workflow
+        Convert text to speech and save as audio file
         
         Args:
-            text: Text to convert
-            output_filename: Output filename (auto-generated if None)
-            voice_id: UnrealSpeech voice ID
+            text: Text to convert to speech
+            voice_id: Voice ID to use (must be one of: Eleanor, Melody, Javier, Amelia, Sierra, etc.)
             bitrate: Audio bitrate
-            speed: Speech speed
-            pitch: Speech pitch
-            save_file: Whether to save audio to file
+            speed: Speech speed (-1.0 to 1.0)
+            pitch: Speech pitch (0.5 to 2.0)
+            codec: Audio codec
+            output_filename: Optional output filename
+            output_dir: Optional output directory (defaults to "generated_audio")
             
         Returns:
-            Path to saved file if save_file=True, None otherwise
+            Path to generated audio file
         """
         try:
-            print("🎤 Starting text-to-speech conversion...")
-            
-            # Generate audio
-            audio_data = self.generate_audio(
+            # Generate audio bytes
+            audio_bytes = self.generate_audio(
                 text=text,
                 voice_id=voice_id,
                 bitrate=bitrate,
                 speed=speed,
-                pitch=pitch
+                pitch=pitch,
+                codec=codec
             )
             
-            if save_file:
-                print("💾 Saving audio file...")
-                # Save to file
-                saved_path = self.save_audio(audio_data, output_filename)
-                print(f"🎉 Audio generation complete! Saved to: {saved_path}")
-                return saved_path
-            else:
-                return audio_data
-                
+            # Create output directory if it doesn't exist
+            output_dir = Path(output_dir) if output_dir else Path("generated_audio")
+            output_dir.mkdir(exist_ok=True)
+            
+            # Generate filename if not provided
+            if not output_filename:
+                timestamp = int(time.time())
+                output_filename = f"tts_audio_{timestamp}.mp3"
+            
+            # Ensure filename has .mp3 extension
+            if not output_filename.endswith('.mp3'):
+                output_filename += '.mp3'
+            
+            # Save audio file
+            output_path = output_dir / output_filename
+            with open(output_path, 'wb') as f:
+                f.write(audio_bytes)
+            
+            logger.info(f"Audio saved to: {output_path}")
+            return output_path
+            
         except Exception as e:
-            print(f"❌ Audio generation failed: {str(e)}")
             logger.error(f"Text-to-speech conversion failed: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response status: {e.response.status_code}")
+                try:
+                    error_details = e.response.json()
+                    logger.error(f"Error details: {json.dumps(error_details, indent=2)}")
+                except:
+                    logger.error(f"Raw response: {e.response.text}")
             raise
     
     def _sanitize_filename(self, filename: str) -> str:
