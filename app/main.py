@@ -1,119 +1,178 @@
-from fastapi import FastAPI, WebSocket, HTTPException, Depends, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-import aiofiles
 import os
+import logging
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from typing import List, Optional
-import asyncio
-from datetime import datetime
+import uvicorn
 
-from app.core.pipeline import NewsPipeline
-from app.api.routes import auth, articles, audio
-from app.api.websockets import ConnectionManager
-from app.config import Settings
+from services.scraper import FTScraper
+from services.audio_generator import AudioGenerator
+from services.article_prioritizer import ArticlePrioritizer
 
-app = FastAPI(title="AI Radio API")
-settings = Settings()
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# CORS middleware
+# Initialize FastAPI app
+app = FastAPI(title="FT Article Audio Generator")
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Modify in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# WebSocket connection manager
-manager = ConnectionManager()
+# Initialize services
+scraper = None
+audio_generator = AudioGenerator()
+article_prioritizer = ArticlePrioritizer()
 
-# Initialize pipeline
-pipeline = NewsPipeline()
+# Models
+class ScraperConfig(BaseModel):
+    username: str
+    uni_id: str
+    password: str
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize necessary components on startup"""
-    # Create required directories
-    os.makedirs(settings.AUDIO_STORAGE_PATH, exist_ok=True)
-    os.makedirs(settings.ARTICLE_STORAGE_PATH, exist_ok=True)
-    os.makedirs(settings.PRIORITY_STORAGE_PATH, exist_ok=True)
+class Article(BaseModel):
+    headline: str
+    url: str
+    standfirst: Optional[str] = None
+    full_text: Optional[str] = None
+    author: Optional[str] = None
+    date: Optional[str] = None
+    priority_score: Optional[float] = None
+    audio_path: Optional[str] = None
 
-@app.get("/")
-async def root():
-    return {"message": "AI Radio API"}
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+# Routes
+@app.post("/initialize")
+async def initialize_scraper(config: ScraperConfig):
+    """Initialize the FT scraper with credentials"""
+    global scraper
     try:
-        while True:
-            data = await websocket.receive_text()
-            # Handle WebSocket messages
-            await manager.broadcast(f"Message: {data}")
-    except Exception as e:
-        manager.disconnect(websocket)
-
-@app.get("/articles")
-async def get_articles():
-    """Get list of available articles"""
-    return pipeline.get_articles()
-
-@app.get("/articles/{article_id}/audio")
-async def stream_audio(article_id: int):
-    """Stream audio for a specific article"""
-    try:
-        article = pipeline.get_article(article_id)
-        if not article:
-            raise HTTPException(status_code=404, detail="Article not found")
-
-        audio_path = pipeline.get_audio_path(article)
-        if not os.path.exists(audio_path):
-            raise HTTPException(status_code=404, detail="Audio file not found")
-
-        async def audio_stream():
-            async with aiofiles.open(audio_path, 'rb') as f:
-                while chunk := await f.read(8192):  # 8KB chunks
-                    yield chunk
-
-        return StreamingResponse(
-            audio_stream(),
-            media_type="audio/mpeg",
-            headers={
-                "Content-Disposition": f'attachment; filename="audio_{article.safe_title}.mp3"'
-            }
+        scraper = FTScraper(
+            username=config.username,
+            uni_id=config.uni_id,
+            password=config.password
         )
+        success = scraper.login()
+        if not success:
+            raise HTTPException(status_code=401, detail="Failed to login to FT")
+        return {"message": "Scraper initialized successfully"}
     except Exception as e:
+        logger.error(f"Error initializing scraper: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/articles/{article_id}/generate")
-async def generate_audio(article_id: int, background_tasks: BackgroundTasks):
-    """Generate audio for an article in the background"""
+@app.get("/articles", response_model=List[Article])
+async def get_articles():
+    """Get list of articles from FT"""
+    if not scraper:
+        raise HTTPException(status_code=400, detail="Scraper not initialized")
+    
     try:
-        article = pipeline.get_article(article_id)
-        if not article:
-            raise HTTPException(status_code=404, detail="Article not found")
-
-        # Start background generation
-        background_tasks.add_task(pipeline.generate_audio, article)
+        # Refresh session if needed
+        scraper.refresh_session_if_needed()
         
-        return {"message": "Audio generation started", "article_id": article_id}
+        # Get article previews
+        articles = scraper.scrape_articles()
+        if not articles:
+            raise HTTPException(status_code=404, detail="No articles found")
+            
+        return articles
     except Exception as e:
+        logger.error(f"Error getting articles: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/articles/{article_id}/status")
-async def get_article_status(article_id: int):
-    """Get the status of an article's audio generation"""
+@app.get("/article/{url:path}", response_model=Article)
+async def get_article(url: str):
+    """Get full article content"""
+    if not scraper:
+        raise HTTPException(status_code=400, detail="Scraper not initialized")
+    
     try:
-        article = pipeline.get_article(article_id)
-        if not article:
+        # Refresh session if needed
+        scraper.refresh_session_if_needed()
+        
+        # Get full article content
+        article_data = scraper.scrape_full_article(url)
+        if not article_data:
             raise HTTPException(status_code=404, detail="Article not found")
-
-        status = pipeline.get_article_status(article)
-        return status
+            
+        return article_data
     except Exception as e:
+        logger.error(f"Error getting article: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Include routers
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(articles.router, prefix="/articles", tags=["articles"])
-app.include_router(audio.router, prefix="/audio", tags=["audio"]) 
+@app.post("/generate-audio/{url:path}")
+async def generate_audio(url: str, background_tasks: BackgroundTasks):
+    """Generate audio for an article"""
+    if not scraper:
+        raise HTTPException(status_code=400, detail="Scraper not initialized")
+    
+    try:
+        # Get article content
+        article_data = await get_article(url)
+        
+        # Calculate priority score
+        priority_score = article_prioritizer.calculate_priority_score(article_data)
+        article_data['priority_score'] = priority_score
+        
+        # Generate audio in background
+        def generate_audio_task():
+            audio_path = audio_generator.generate_article_audio(article_data)
+            if audio_path:
+                article_data['audio_path'] = audio_path
+        
+        background_tasks.add_task(generate_audio_task)
+        
+        return {
+            "message": "Audio generation started",
+            "article": article_data
+        }
+    except Exception as e:
+        logger.error(f"Error generating audio: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/prioritize-articles", response_model=List[Article])
+async def prioritize_articles():
+    """Get prioritized list of articles"""
+    if not scraper:
+        raise HTTPException(status_code=400, detail="Scraper not initialized")
+    
+    try:
+        # Get articles
+        articles = await get_articles()
+        
+        # Get full content for each article
+        full_articles = []
+        for article in articles:
+            try:
+                full_article = await get_article(article['url'])
+                full_articles.append(full_article)
+            except Exception as e:
+                logger.error(f"Error getting full article: {str(e)}")
+                continue
+        
+        # Prioritize articles
+        prioritized_articles = article_prioritizer.prioritize_articles(full_articles)
+        
+        return prioritized_articles
+    except Exception as e:
+        logger.error(f"Error prioritizing articles: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    global scraper
+    if scraper:
+        scraper.force_cleanup()
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 

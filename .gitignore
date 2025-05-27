@@ -7,7 +7,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 build/
 develop-eggs/
 dist/
@@ -27,6 +26,7 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
+env/
 
 # IDE
 .idea/
@@ -34,18 +34,21 @@ ENV/
 *.swp
 *.swo
 
-# Application specific
-audio_outputs/
-scraped_articles/
-priority_lists/
-*.db
-visited_urls.json
-last_login.txt
-
 # Logs
 *.log
 logs/
 
-# OS
+# Audio and article outputs
+audio_output/
+scraped_articles/
+priority_lists/
+current_priority_list.txt
+last_login.txt
+
+# Chrome and ChromeDriver
+chromedriver
+chromedriver.exe
+
+# OS specific
 .DS_Store
 Thumbs.db 
