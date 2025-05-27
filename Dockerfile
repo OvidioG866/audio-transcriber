@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies including ffmpeg
 RUN apt-get update && apt-get install -y \
+    ffmpeg \
     wget \
     gnupg \
     unzip \
@@ -35,7 +36,7 @@ RUN wget -q "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/120.0.6
     && chmod +x /usr/local/bin/chromedriver \
     && rm -rf chromedriver-linux64.zip chromedriver-linux64
 
-# Set up working directory
+# Set working directory
 WORKDIR /app
 
 # Copy requirements first to leverage Docker cache
@@ -54,8 +55,8 @@ RUN mkdir -p audio_outputs scraped_articles priority_lists
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
 
-# Expose port
+# Expose the port the app runs on
 EXPOSE 8000
 
-# Start the application
+# Command to run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 

@@ -1,5 +1,7 @@
 import os
 import logging
+import gc
+import torch
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,6 +11,8 @@ import uvicorn
 from app.services.scraper import FTScraper
 from app.services.audio_generator import AudioGenerator
 from app.services.article_prioritizer import ArticlePrioritizer
+from app.services.article_scraper import ArticleScraper
+from app.services.prioritizer import Prioritizer
 
 # Setup logging
 logging.basicConfig(
@@ -33,6 +37,21 @@ app.add_middleware(
 scraper = None
 audio_generator = AudioGenerator()
 article_prioritizer = ArticlePrioritizer()
+article_scraper = ArticleScraper()
+prioritizer = Prioritizer()
+
+# Configure memory management
+def configure_memory():
+    # Clear CUDA cache if available
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    
+    # Force garbage collection
+    gc.collect()
+
+@app.on_event("startup")
+async def startup_event():
+    configure_memory()
 
 # Models
 class ScraperConfig(BaseModel):
@@ -173,6 +192,7 @@ async def shutdown_event():
     global scraper
     if scraper:
         scraper.force_cleanup()
+    configure_memory()
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 

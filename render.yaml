@@ -24,4 +24,14 @@ services:
       - key: ARTICLE_STORAGE_PATH
         value: ./scraped_articles
       - key: PRIORITY_STORAGE_PATH
-        value: ./priority_lists 
+        value: ./priority_lists
+  - type: web
+    name: audio-transcriber
+    env: docker
+    plan: standard
+    memory: 1024
+    buildCommand: docker build -t audio-transcriber .
+    startCommand: docker run -p 8000:8000 audio-transcriber
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1" 
