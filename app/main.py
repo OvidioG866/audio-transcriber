@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 
-from services.scraper import FTScraper
-from services.audio_generator import AudioGenerator
-from services.article_prioritizer import ArticlePrioritizer
+from app.services.scraper import FTScraper
+from app.services.audio_generator import AudioGenerator
+from app.services.article_prioritizer import ArticlePrioritizer
 
 # Setup logging
 logging.basicConfig(
@@ -175,4 +175,4 @@ async def shutdown_event():
         scraper.force_cleanup()
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
