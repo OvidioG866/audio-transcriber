@@ -11,8 +11,6 @@ import uvicorn
 from app.services.scraper import FTScraper
 from app.services.audio_generator import AudioGenerator
 from app.services.article_prioritizer import ArticlePrioritizer
-from app.services.article_scraper import ArticleScraper
-from app.services.prioritizer import Prioritizer
 
 # Setup logging
 logging.basicConfig(
@@ -37,8 +35,6 @@ app.add_middleware(
 scraper = None
 audio_generator = AudioGenerator()
 article_prioritizer = ArticlePrioritizer()
-article_scraper = ArticleScraper()
-prioritizer = Prioritizer()
 
 # Configure memory management
 def configure_memory():
