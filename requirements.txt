@@ -13,4 +13,5 @@ passlib[bcrypt]==1.7.4
 python-dotenv==1.0.0
 unrealspeech==0.1.0
 openai==1.12.0
-pygame==2.5.2 
+pygame==2.5.2
+gtts==2.5.1 
