@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install Chrome and dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -28,13 +28,14 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Get Chrome version and install matching ChromeDriver
+# Install ChromeDriver
 RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1) \
-    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION.0.6099.109/linux64/chromedriver-linux64.zip" \
-    && unzip chromedriver-linux64.zip \
-    && mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") \
+    && wget -q "https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip" \
+    && unzip chromedriver_linux64.zip \
+    && mv chromedriver /usr/local/bin/chromedriver \
     && chmod +x /usr/local/bin/chromedriver \
-    && rm -rf chromedriver-linux64.zip chromedriver-linux64
+    && rm chromedriver_linux64.zip
 
 # Set up working directory
 WORKDIR /app
