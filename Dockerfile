@@ -1,8 +1,7 @@
 FROM python:3.11-slim
 
-# Install system dependencies including ffmpeg
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
     wget \
     gnupg \
     unzip \
@@ -29,7 +28,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver (using a specific version that matches Chrome)
+# Install ChromeDriver
 RUN wget -q "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/120.0.6099.109/linux64/chromedriver-linux64.zip" \
     && unzip chromedriver-linux64.zip \
     && mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
@@ -49,7 +48,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p audio_outputs scraped_articles priority_lists
+RUN mkdir -p scraped_articles
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -59,4 +58,4 @@ ENV DISPLAY=:99
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
