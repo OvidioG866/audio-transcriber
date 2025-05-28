@@ -103,8 +103,41 @@ class FTScraper:
         self.load_progress()
         self.load_last_scrape_time()
         
-        # Initialize or restore session
-        self.initialize_or_restore_session()
+        # Initialize Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument('--headless=new')  # Updated headless mode
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--window-size=1920,1080')
+
+        try:
+            # Initialize ChromeDriver with explicit Windows 64-bit version
+            service = Service(ChromeDriverManager(os_type="win64").install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Set up wait with explicit timeout
+            self.wait = WebDriverWait(self.driver, 20)
+            
+            # Test the connection with a simple page load
+            logger.info("Testing WebDriver connection...")
+            self.driver.get("about:blank")
+            
+            # Verify we can interact with the browser
+            self.driver.execute_script("return navigator.userAgent")
+            
+            logger.info("Chrome WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Chrome WebDriver: {str(e)}")
+            # Try alternative initialization
+            try:
+                logger.info("Attempting alternative ChromeDriver initialization...")
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                logger.info("Alternative initialization successful")
+            except Exception as e2:
+                logger.error(f"Alternative initialization also failed: {str(e2)}")
+                raise Exception("Failed to initialize Chrome WebDriver after multiple attempts")
 
     def initialize_or_restore_session(self) -> bool:
         """Initialize a new session or restore an existing one."""
