@@ -4,4 +4,5 @@ selenium==4.15.2
 pydantic==2.5.2
 python-dotenv==1.0.0
 python-multipart==0.0.6
-aiofiles==23.2.1 
+aiofiles==23.2.1
+webdriver-manager==4.0.1 

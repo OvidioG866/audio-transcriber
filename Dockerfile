@@ -35,11 +35,21 @@ RUN wget -q "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/120.0.6
     && chmod +x /usr/local/bin/chromedriver \
     && rm -rf chromedriver-linux64.zip chromedriver-linux64
 
+# Create non-root user
+RUN useradd -m -u 1000 appuser
+
 # Set working directory
 WORKDIR /app
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip
+RUN pip install --no-cache-dir --upgrade pip
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
@@ -47,12 +57,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p scraped_articles
+# Create necessary directories and set permissions
+RUN mkdir -p scraped_articles && \
+    chown -R appuser:appuser /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
+
+# Switch to non-root user
+USER appuser
 
 # Expose the port the app runs on
 EXPOSE 8000
