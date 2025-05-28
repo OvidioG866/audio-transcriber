@@ -84,12 +84,12 @@ class FTScraper:
             
             # Check if Playwright browsers are installed
             try:
-                from playwright.sync_api import sync_playwright
-                with sync_playwright() as p:
-                    browser_path = p.chromium.executable_path
-                    logger.info(f"Chromium browser path: {browser_path}")
-                    if not os.path.exists(browser_path):
-                        raise Exception(f"Chromium browser not found at {browser_path}")
+                playwright = await async_playwright().start()
+                browser_path = playwright.chromium.executable_path
+                logger.info(f"Chromium browser path: {browser_path}")
+                if not os.path.exists(browser_path):
+                    raise Exception(f"Chromium browser not found at {browser_path}")
+                await playwright.stop()
             except Exception as browser_check_error:
                 logger.error(f"Browser check failed: {str(browser_check_error)}")
                 raise Exception(f"Browser check failed: {str(browser_check_error)}")
