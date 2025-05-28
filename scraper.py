@@ -120,44 +120,9 @@ class FTScraper:
         chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')
 
         try:
-            # First try to get Chrome version
-            def get_chrome_version():
-                try:
-                    # Try Windows registry first
-                    import winreg
-                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
-                    version, _ = winreg.QueryValueEx(key, "version")
-                    return version
-                except:
-                    try:
-                        # Try command line as fallback
-                        process = subprocess.Popen(
-                            ['reg', 'query', 'HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon', '/v', 'version'],
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
-                        )
-                        output, _ = process.communicate()
-                        version = re.search(r'version\s+REG_SZ\s+([\d.]+)', output.decode())
-                        if version:
-                            return version.group(1)
-                    except:
-                        pass
-                return None
-
-            chrome_version = get_chrome_version()
-            logger.info(f"Detected Chrome version: {chrome_version}")
-
-            if chrome_version:
-                # Extract major version
-                major_version = chrome_version.split('.')[0]
-                logger.info(f"Using ChromeDriver for Chrome version {major_version}")
-                
-                # Initialize ChromeDriver with specific version
-                service = Service(ChromeDriverManager(version=major_version).install())
-            else:
-                # Fallback to latest version if can't detect Chrome version
-                logger.info("Could not detect Chrome version, using latest ChromeDriver")
-                service = Service(ChromeDriverManager().install())
-
+            # Use specific version matching your Chrome installation
+            logger.info("Initializing ChromeDriver with version 136...")
+            service = Service(ChromeDriverManager(version="136.0.7103.114").install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
             # Set up wait with explicit timeout
@@ -176,8 +141,8 @@ class FTScraper:
             # Try alternative initialization
             try:
                 logger.info("Attempting alternative ChromeDriver initialization...")
-                # Try without version specification
-                service = Service(ChromeDriverManager().install())
+                # Try with just the major version
+                service = Service(ChromeDriverManager(version="136").install())
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
                 logger.info("Alternative initialization successful")
             except Exception as e2:
@@ -187,7 +152,7 @@ class FTScraper:
                     logger.info("Attempting final initialization with minimal options...")
                     minimal_options = Options()
                     minimal_options.add_argument('--headless=new')
-                    service = Service(ChromeDriverManager().install())
+                    service = Service(ChromeDriverManager(version="136").install())
                     self.driver = webdriver.Chrome(service=service, options=minimal_options)
                     logger.info("Final initialization successful")
                 except Exception as e3:
