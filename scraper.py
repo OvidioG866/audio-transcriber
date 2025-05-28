@@ -10,6 +10,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import glob
 import sys
+from playwright.sync_api import sync_playwright
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = "logs"
@@ -85,32 +86,23 @@ class FTScraper:
             # Check if Playwright browsers are installed
             try:
                 logger.info("Starting browser check...")
-                playwright = await async_playwright().start()
-                logger.info("Playwright instance created successfully")
-                
-                try:
-                    browser_path = playwright.chromium.executable_path
+                # First, try to get the browser path without starting Playwright
+                with sync_playwright() as p:
+                    browser_path = p.chromium.executable_path
                     logger.info(f"Chromium browser path: {browser_path}")
                     
                     if not os.path.exists(browser_path):
                         error_msg = f"Chromium browser not found at {browser_path}"
                         logger.error(error_msg)
                         raise Exception(error_msg)
-                        
+                    
                     # Verify browser executable permissions
                     if not os.access(browser_path, os.X_OK):
                         error_msg = f"Chromium browser at {browser_path} is not executable"
                         logger.error(error_msg)
                         raise Exception(error_msg)
-                        
-                    logger.info("Browser check completed successfully")
-                except Exception as path_error:
-                    logger.error(f"Error checking browser path: {str(path_error)}")
-                    raise Exception(f"Browser path check failed: {str(path_error)}")
-                finally:
-                    await playwright.stop()
-                    logger.info("Temporary Playwright instance stopped")
                     
+                    logger.info("Browser check completed successfully")
             except Exception as browser_check_error:
                 error_msg = f"Browser check failed: {str(browser_check_error)}"
                 logger.error(error_msg)
@@ -144,8 +136,19 @@ class FTScraper:
                 ]
                 logger.info(f"Browser launch arguments: {browser_args}")
                 
+                # Get the browser path from the environment or use the default
                 executable_path = os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH')
+                if not executable_path:
+                    # If not set in environment, get it from Playwright
+                    with sync_playwright() as p:
+                        executable_path = p.chromium.executable_path
+                
                 logger.info(f"Using browser executable path: {executable_path}")
+                
+                if not os.path.exists(executable_path):
+                    error_msg = f"Browser executable not found at {executable_path}"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
                 
                 self.browser = await self.playwright.chromium.launch(
                     headless=True,
