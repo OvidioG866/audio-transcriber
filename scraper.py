@@ -84,42 +84,73 @@ class FTScraper:
             
             # Check if Playwright browsers are installed
             try:
+                logger.info("Starting browser check...")
                 playwright = await async_playwright().start()
-                browser_path = playwright.chromium.executable_path
-                logger.info(f"Chromium browser path: {browser_path}")
-                if not os.path.exists(browser_path):
-                    raise Exception(f"Chromium browser not found at {browser_path}")
-                await playwright.stop()
+                logger.info("Playwright instance created successfully")
+                
+                try:
+                    browser_path = playwright.chromium.executable_path
+                    logger.info(f"Chromium browser path: {browser_path}")
+                    
+                    if not os.path.exists(browser_path):
+                        error_msg = f"Chromium browser not found at {browser_path}"
+                        logger.error(error_msg)
+                        raise Exception(error_msg)
+                        
+                    # Verify browser executable permissions
+                    if not os.access(browser_path, os.X_OK):
+                        error_msg = f"Chromium browser at {browser_path} is not executable"
+                        logger.error(error_msg)
+                        raise Exception(error_msg)
+                        
+                    logger.info("Browser check completed successfully")
+                except Exception as path_error:
+                    logger.error(f"Error checking browser path: {str(path_error)}")
+                    raise Exception(f"Browser path check failed: {str(path_error)}")
+                finally:
+                    await playwright.stop()
+                    logger.info("Temporary Playwright instance stopped")
+                    
             except Exception as browser_check_error:
-                logger.error(f"Browser check failed: {str(browser_check_error)}")
-                raise Exception(f"Browser check failed: {str(browser_check_error)}")
+                error_msg = f"Browser check failed: {str(browser_check_error)}"
+                logger.error(error_msg)
+                logger.error(f"Error type: {type(browser_check_error)}")
+                logger.error(f"Error details: {browser_check_error.__dict__}")
+                raise Exception(error_msg)
             
-            logger.info("Initializing Playwright...")
+            logger.info("Initializing main Playwright instance...")
             try:
                 self.playwright = await async_playwright().start()
-                logger.info("Playwright started successfully")
+                logger.info("Main Playwright instance started successfully")
             except Exception as playwright_error:
-                logger.error(f"Failed to start Playwright: {str(playwright_error)}")
+                error_msg = f"Failed to start Playwright: {str(playwright_error)}"
+                logger.error(error_msg)
                 logger.error(f"Error type: {type(playwright_error)}")
                 logger.error(f"Error details: {playwright_error.__dict__}")
-                raise Exception(f"Failed to start Playwright: {str(playwright_error)}")
+                raise Exception(error_msg)
             
             try:
                 logger.info("Launching browser...")
+                browser_args = [
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--single-process',
+                    '--no-zygote'
+                ]
+                logger.info(f"Browser launch arguments: {browser_args}")
+                
+                executable_path = os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH')
+                logger.info(f"Using browser executable path: {executable_path}")
+                
                 self.browser = await self.playwright.chromium.launch(
                     headless=True,
-                    args=[
-                        '--no-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        '--disable-web-security',
-                        '--disable-background-timer-throttling',
-                        '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding',
-                        '--single-process',
-                        '--no-zygote'  # Added for better container compatibility
-                    ],
-                    executable_path=os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH')
+                    args=browser_args,
+                    executable_path=executable_path
                 )
                 logger.info("Browser launched successfully")
                 
@@ -134,18 +165,20 @@ class FTScraper:
                 
                 return True
             except Exception as browser_error:
-                logger.error(f"Browser initialization failed: {str(browser_error)}")
+                error_msg = f"Browser initialization failed: {str(browser_error)}"
+                logger.error(error_msg)
                 logger.error(f"Error type: {type(browser_error)}")
                 logger.error(f"Error details: {browser_error.__dict__}")
                 if self.playwright:
                     await self.playwright.stop()
-                raise Exception(f"Browser initialization failed: {str(browser_error)}")
+                raise Exception(error_msg)
                 
         except Exception as e:
-            logger.error(f"Playwright initialization failed: {str(e)}")
+            error_msg = f"Playwright initialization failed: {str(e)}"
+            logger.error(error_msg)
             logger.error(f"Error type: {type(e)}")
             logger.error(f"Error details: {e.__dict__}")
-            raise Exception(f"Playwright initialization failed: {str(e)}")
+            raise Exception(error_msg)
 
     def __init__(self, username: str, uni_id: str, password: str):
         self.username = username
