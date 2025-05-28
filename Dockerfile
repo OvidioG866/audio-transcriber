@@ -65,6 +65,11 @@ RUN pip install playwright
 RUN playwright install chromium
 RUN playwright install-deps
 
+# Set Playwright browser path
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
+RUN mkdir -p /app/pw-browsers && \
+    chown -R appuser:appuser /app/pw-browsers
+
 # Copy the rest of the application
 COPY . .
 
@@ -75,7 +80,7 @@ RUN mkdir -p scraped_articles logs && \
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/app/pw-browsers/chromium-*/chrome-linux/chrome
 
 # Switch to non-root user
 USER appuser
