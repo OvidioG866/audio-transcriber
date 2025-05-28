@@ -3,7 +3,7 @@ import logging
 import time
 from typing import List, Dict, Optional, Set
 from datetime import datetime
-from playwright.sync_api import sync_playwright, Page, Browser
+from playwright.async_api import async_playwright, Page, Browser
 from dotenv import load_dotenv
 import json
 from pathlib import Path
@@ -73,6 +73,37 @@ logger.debug(f"FT_USERNAME from env: {os.getenv('FT_USERNAME')}")
 logger.debug(f"FT_PASSWORD from env: {os.getenv('FT_PASSWORD')}")
 
 class FTScraper:
+    async def initialize(self):
+        """Initialize Playwright and browser."""
+        try:
+            logger.info("Initializing Playwright...")
+            self.playwright = await async_playwright().start()
+            logger.info("Playwright started successfully")
+            
+            self.browser = await self.playwright.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-gpu',
+                    '--disable-dev-shm-usage',
+                    '--disable-setuid-sandbox',
+                    '--no-sandbox',
+                ]
+            )
+            logger.info("Browser launched successfully")
+            
+            self.page = await self.browser.new_page(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.114 Safari/537.36'
+            )
+            logger.info("New page created successfully")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize Playwright: {str(e)}")
+            if self.playwright:
+                await self.playwright.stop()
+            raise Exception(f"Failed to initialize Playwright: {str(e)}")
+
     def __init__(self, username: str, uni_id: str, password: str):
         self.username = username
         self.uni_id = uni_id
@@ -96,28 +127,6 @@ class FTScraper:
         self.last_scrape_file = os.path.join(self.data_dir, "last_scrape_time.json")
         self.load_progress()
         self.load_last_scrape_time()
-        
-        # Initialize Playwright
-        try:
-            logger.info("Initializing Playwright...")
-            self.playwright = sync_playwright().start()
-            self.browser = self.playwright.chromium.launch(
-                headless=True,
-                args=[
-                    '--disable-gpu',
-                    '--disable-dev-shm-usage',
-                    '--disable-setuid-sandbox',
-                    '--no-sandbox',
-                ]
-            )
-            self.page = self.browser.new_page(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.114 Safari/537.36'
-            )
-            logger.info("Playwright initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Playwright: {str(e)}")
-            raise Exception("Failed to initialize Playwright")
 
     def initialize_or_restore_session(self) -> bool:
         """Initialize a new session or restore an existing one."""

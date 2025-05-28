@@ -51,21 +51,26 @@ class Article(BaseModel):
 
 # Routes
 @app.post("/initialize")
-async def initialize_scraper(config: ScraperConfig):
-    """Initialize the FT scraper with credentials"""
-    global scraper
+async def initialize_scraper(credentials: ScraperConfig):
+    """Initialize the scraper with FT credentials."""
     try:
         scraper = FTScraper(
-            username=config.username,
-            uni_id=config.uni_id,
-            password=config.password
+            username=credentials.username,
+            uni_id=credentials.uni_id,
+            password=credentials.password
         )
-        success = scraper.login()
-        if not success:
-            raise HTTPException(status_code=401, detail="Failed to login to FT")
-        return {"message": "Scraper initialized successfully"}
+        
+        # Initialize Playwright
+        await scraper.initialize()
+        
+        # Initialize or restore session
+        if await scraper.initialize_or_restore_session():
+            return {"status": "success", "message": "Scraper initialized successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to initialize session")
+            
     except Exception as e:
-        logger.error(f"Error initializing scraper: {str(e)}")
+        logger.error(f"Initialization error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/articles", response_model=List[Article])
