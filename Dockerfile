@@ -12,19 +12,33 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     libxss1 \
     libasound2 \
-    wget \
-    gnupg \
-    unzip \
-    xvfb \
-    libxi6 \
-    libgconf-2-4 \
-    libfontconfig1 \
-    libxcb1 \
     libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
-    curl \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libexpat1 \
+    libfontconfig1 \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    libnss3-tools \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chrome
@@ -69,12 +83,13 @@ RUN playwright install-deps
 COPY . .
 
 # Create necessary directories and set permissions
-RUN mkdir -p scraped_articles && \
+RUN mkdir -p scraped_articles logs && \
     chown -R appuser:appuser /app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISPLAY=:99
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
 
 # Switch to non-root user
 USER appuser

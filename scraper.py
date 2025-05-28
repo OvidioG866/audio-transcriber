@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import glob
+import sys
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = "logs"
@@ -76,9 +77,20 @@ class FTScraper:
     async def initialize(self):
         """Initialize Playwright and browser."""
         try:
+            # Log system information
+            logger.info(f"Current working directory: {os.getcwd()}")
+            logger.info(f"Python version: {sys.version}")
+            logger.info(f"Environment variables: {dict(os.environ)}")
+            
             logger.info("Initializing Playwright...")
-            self.playwright = await async_playwright().start()
-            logger.info("Playwright started successfully")
+            try:
+                self.playwright = await async_playwright().start()
+                logger.info("Playwright started successfully")
+            except Exception as playwright_error:
+                logger.error(f"Failed to start Playwright: {str(playwright_error)}")
+                logger.error(f"Error type: {type(playwright_error)}")
+                logger.error(f"Error details: {playwright_error.__dict__}")
+                raise Exception(f"Failed to start Playwright: {str(playwright_error)}")
             
             try:
                 logger.info("Launching browser...")
@@ -91,7 +103,8 @@ class FTScraper:
                         '--disable-web-security',
                         '--disable-background-timer-throttling',
                         '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding'
+                        '--disable-renderer-backgrounding',
+                        '--single-process'  # Added for better container compatibility
                     ]
                 )
                 logger.info("Browser launched successfully")
@@ -108,12 +121,16 @@ class FTScraper:
                 return True
             except Exception as browser_error:
                 logger.error(f"Browser initialization failed: {str(browser_error)}")
+                logger.error(f"Error type: {type(browser_error)}")
+                logger.error(f"Error details: {browser_error.__dict__}")
                 if self.playwright:
                     await self.playwright.stop()
                 raise Exception(f"Browser initialization failed: {str(browser_error)}")
                 
         except Exception as e:
             logger.error(f"Playwright initialization failed: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error details: {e.__dict__}")
             raise Exception(f"Playwright initialization failed: {str(e)}")
 
     def __init__(self, username: str, uni_id: str, password: str):
