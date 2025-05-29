@@ -1,92 +1,48 @@
-FROM python:3.11-slim
+FROM python:3.9-slim
 
-# Install system dependencies for Playwright
+# Install Chrome and dependencies
 RUN apt-get update && apt-get install -y \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libxss1 \
-    libasound2 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libexpat1 \
-    libfontconfig1 \
-    libglib2.0-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxss1 \
-    libxtst6 \
-    libnss3-tools \
+    wget \
+    gnupg \
+    unzip \
     xvfb \
+    libxi6 \
+    libgconf-2-4 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser
+# Install Chrome
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Install ChromeDriver matching the installed Chrome version
+RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}') && \
+    CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json" | \
+    python3 -c "import sys, json; v=sys.stdin.read(); d=json.loads(v); print(d['channels']['Stable']['version'])") && \
+    wget -O /tmp/chromedriver.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" && \
+    unzip /tmp/chromedriver.zip -d /tmp/ && \
+    mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver && \
+    chmod +x /usr/local/bin/chromedriver && \
+    rm -rf /tmp/chromedriver.zip /tmp/chromedriver-linux64
+
+# Set up working directory
 WORKDIR /app
 
-# Copy requirements first to leverage Docker cache
+# Copy requirements first for better caching
 COPY requirements.txt .
-
-# Create and activate virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Upgrade pip
-RUN pip install --no-cache-dir --upgrade pip
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright and browsers
-RUN pip install playwright
-RUN playwright install chromium
-RUN playwright install-deps
-
-# Set Playwright browser path
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/pw-browsers
-RUN mkdir -p /app/pw-browsers && \
-    chown -R appuser:appuser /app/pw-browsers
-
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-# Create necessary directories and set permissions
-RUN mkdir -p scraped_articles logs && \
-    chown -R appuser:appuser /app
+# Create necessary directories
+RUN mkdir -p logs scraped_data
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV DISPLAY=:99
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/app/pw-browsers/chromium-*/chrome-linux/chrome
-
-# Switch to non-root user
-USER appuser
-
-# Expose the port the app runs on
+# Expose port
 EXPOSE 8000
 
-# Command to run the application
+# Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 

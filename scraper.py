@@ -10,7 +10,15 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import glob
 import sys
-from playwright.sync_api import sync_playwright
+import asyncio
+import concurrent.futures
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import random
 
 # Create logs directory if it doesn't exist
 LOGS_DIR = "logs"
@@ -75,127 +83,11 @@ logger.debug(f"FT_USERNAME from env: {os.getenv('FT_USERNAME')}")
 logger.debug(f"FT_PASSWORD from env: {os.getenv('FT_PASSWORD')}")
 
 class FTScraper:
-    async def initialize(self):
-        """Initialize Playwright and browser."""
-        try:
-            # Log system information
-            logger.info(f"Current working directory: {os.getcwd()}")
-            logger.info(f"Python version: {sys.version}")
-            logger.info(f"Environment variables: {dict(os.environ)}")
-            
-            # Check if Playwright browsers are installed
-            try:
-                logger.info("Starting browser check...")
-                # First, try to get the browser path without starting Playwright
-                with sync_playwright() as p:
-                    browser_path = p.chromium.executable_path
-                    logger.info(f"Chromium browser path: {browser_path}")
-                    
-                    if not os.path.exists(browser_path):
-                        error_msg = f"Chromium browser not found at {browser_path}"
-                        logger.error(error_msg)
-                        raise Exception(error_msg)
-                    
-                    # Verify browser executable permissions
-                    if not os.access(browser_path, os.X_OK):
-                        error_msg = f"Chromium browser at {browser_path} is not executable"
-                        logger.error(error_msg)
-                        raise Exception(error_msg)
-                    
-                    logger.info("Browser check completed successfully")
-            except Exception as browser_check_error:
-                error_msg = f"Browser check failed: {str(browser_check_error)}"
-                logger.error(error_msg)
-                logger.error(f"Error type: {type(browser_check_error)}")
-                logger.error(f"Error details: {browser_check_error.__dict__}")
-                raise Exception(error_msg)
-            
-            logger.info("Initializing main Playwright instance...")
-            try:
-                self.playwright = await async_playwright().start()
-                logger.info("Main Playwright instance started successfully")
-            except Exception as playwright_error:
-                error_msg = f"Failed to start Playwright: {str(playwright_error)}"
-                logger.error(error_msg)
-                logger.error(f"Error type: {type(playwright_error)}")
-                logger.error(f"Error details: {playwright_error.__dict__}")
-                raise Exception(error_msg)
-            
-            try:
-                logger.info("Launching browser...")
-                browser_args = [
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-web-security',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--single-process',
-                    '--no-zygote'
-                ]
-                logger.info(f"Browser launch arguments: {browser_args}")
-                
-                # Get the browser path from the environment or use the default
-                executable_path = os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH')
-                if not executable_path:
-                    # If not set in environment, get it from Playwright
-                    with sync_playwright() as p:
-                        executable_path = p.chromium.executable_path
-                
-                logger.info(f"Using browser executable path: {executable_path}")
-                
-                if not os.path.exists(executable_path):
-                    error_msg = f"Browser executable not found at {executable_path}"
-                    logger.error(error_msg)
-                    raise Exception(error_msg)
-                
-                self.browser = await self.playwright.chromium.launch(
-                    headless=True,
-                    args=browser_args,
-                    executable_path=executable_path
-                )
-                logger.info("Browser launched successfully")
-                
-                self.context = await self.browser.new_context(
-                    viewport={'width': 1920, 'height': 1080},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.114 Safari/537.36'
-                )
-                logger.info("Browser context created successfully")
-                
-                self.page = await self.context.new_page()
-                logger.info("New page created successfully")
-                
-                return True
-            except Exception as browser_error:
-                error_msg = f"Browser initialization failed: {str(browser_error)}"
-                logger.error(error_msg)
-                logger.error(f"Error type: {type(browser_error)}")
-                logger.error(f"Error details: {browser_error.__dict__}")
-                if self.playwright:
-                    await self.playwright.stop()
-                raise Exception(error_msg)
-                
-        except Exception as e:
-            error_msg = f"Playwright initialization failed: {str(e)}"
-            logger.error(error_msg)
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Error details: {e.__dict__}")
-            raise Exception(error_msg)
-
-    def __init__(self, username: str, uni_id: str, password: str):
-        self.username = username
-        self.uni_id = uni_id
-        self.password = password
-        self.playwright = None
-        self.browser = None
-        self.page = None
-        self.session_file = "ft_session.json"
+    def __init__(self, username: str = None, uni_id: str = None, password: str = None):
+        self.driver = None
         self.visited_urls: Set[str] = set()
         self.seen_preview_urls: Set[str] = set()
         self.article_previews: List[Dict] = []
-        self.is_logged_in = False
-        self.last_session_refresh = None
         
         # Create data directory if it doesn't exist
         self.data_dir = "scraped_data"
@@ -203,47 +95,53 @@ class FTScraper:
         
         # Load existing progress
         self.progress_file = os.path.join(self.data_dir, "scraping_progress.json")
-        self.last_scrape_file = os.path.join(self.data_dir, "last_scrape_time.json")
         self.load_progress()
-        self.load_last_scrape_time()
 
-    def initialize_or_restore_session(self) -> bool:
-        """Initialize a new session or restore an existing one."""
+    async def initialize(self):
+        """Initialize the scraper."""
         try:
-            # First try to restore existing session
-            if self.load_session():
-                logger.info("Successfully restored existing session")
+            # Run Selenium initialization in a thread pool
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                await loop.run_in_executor(executor, self._sync_init)
                 return True
-                
-            # If no valid session exists, create a new one
-            logger.info("No valid session found, creating new session...")
-            if self.login():
-                self.save_session()
-                self.last_session_refresh = datetime.now()
-                return True
-                
-            return False
-            
         except Exception as e:
-            logger.error(f"Failed to initialize/restore session: {str(e)}")
-            return False
+            print(f"Selenium initialization failed: {str(e)}")
+            raise
 
-    def refresh_session_if_needed(self) -> bool:
-        """Check if session needs refresh and refresh if necessary."""
-        if not self.last_session_refresh:
-            return self.initialize_or_restore_session()
+    def _sync_init(self):
+        try:
+            # Set up Chrome options
+            chrome_options = webdriver.ChromeOptions()
+            chrome_options.add_argument('--headless')  # Run in headless mode
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--remote-debugging-port=9222')  # Add debugging port
+            chrome_options.add_argument('--disable-extensions')
+            chrome_options.add_argument('--disable-popup-blocking')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
-        # Refresh session if it's been more than 12 hours
-        time_since_refresh = datetime.now() - self.last_session_refresh
-        if time_since_refresh.total_seconds() > 43200:  # 12 hours
-            logger.info("Session refresh needed, refreshing...")
-            if self.login():
-                self.save_session()
-                self.last_session_refresh = datetime.now()
-                return True
-            return False
-            
-        return True
+            # Use local ChromeDriver with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    service = Service(executable_path="./chromedriver.exe")
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.driver.set_page_load_timeout(30)  # Set page load timeout
+                    print("Selenium WebDriver initialized successfully")
+                    return
+                except Exception as e:
+                    print(f"Attempt {attempt + 1}/{max_retries} failed: {str(e)}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)  # Wait before retrying
+                    else:
+                        raise
+        except Exception as e:
+            print(f"Failed to initialize ChromeDriver: {str(e)}")
+            raise
 
     def load_progress(self) -> None:
         """Load existing scraping progress."""
@@ -253,22 +151,13 @@ class FTScraper:
                     progress_data = json.load(f)
                     self.visited_urls = set(progress_data.get('visited_urls', []))
                     self.seen_preview_urls = set(progress_data.get('seen_preview_urls', []))
-                    logger.info(f"Loaded {len(self.visited_urls)} previously visited URLs")
-                    logger.info(f"Loaded {len(self.seen_preview_urls)} previously seen preview URLs")
-                    
-                    # If we have visited URLs but no previews, reset visited URLs
-                    previews_file = os.path.join(self.data_dir, "article_previews.json")
-                    if not os.path.exists(previews_file) or os.path.getsize(previews_file) == 0:
-                        logger.info("No previews found despite visited URLs, resetting progress")
-                        self.visited_urls = set()
-                        self.seen_preview_urls = set()
-                        self.save_progress()
+                    print(f"Loaded {len(self.visited_urls)} previously visited URLs")
         except Exception as e:
-            logger.error(f"Failed to load progress: {str(e)}")
+            print(f"Failed to load progress: {str(e)}")
             self.visited_urls = set()
             self.seen_preview_urls = set()
 
-    def save_progress(self) -> None:
+    def _save_visited_urls(self) -> None:
         """Save current scraping progress."""
         try:
             progress_data = {
@@ -278,226 +167,34 @@ class FTScraper:
             }
             with open(self.progress_file, 'w', encoding='utf-8') as f:
                 json.dump(progress_data, f, indent=2)
-            logger.info(f"Saved progress: {len(self.visited_urls)} visited URLs, {len(self.seen_preview_urls)} seen preview URLs")
+            print(f"Saved progress: {len(self.visited_urls)} visited URLs")
         except Exception as e:
-            logger.error(f"Failed to save progress: {str(e)}")
-
-    def load_last_scrape_time(self) -> None:
-        """Load the timestamp of the last full scrape."""
-        try:
-            if os.path.exists(self.last_scrape_file):
-                with open(self.last_scrape_file, 'r') as f:
-                    data = json.load(f)
-                    self.last_scrape_time = datetime.fromisoformat(data['timestamp'])
-            else:
-                self.last_scrape_time = datetime.min
-        except Exception as e:
-            logger.error(f"Failed to load last scrape time: {str(e)}")
-            self.last_scrape_time = datetime.min
-
-    def save_last_scrape_time(self) -> None:
-        """Save the current time as the last scrape time."""
-        try:
-            data = {
-                'timestamp': datetime.now().isoformat()
-            }
-            with open(self.last_scrape_file, 'w') as f:
-                json.dump(data, f)
-            self.last_scrape_time = datetime.now()
-        except Exception as e:
-            logger.error(f"Failed to save last scrape time: {str(e)}")
-
-    def should_perform_full_scrape(self) -> bool:
-        """Check if enough time has passed since the last full scrape."""
-        time_since_last_scrape = datetime.now() - self.last_scrape_time
-        return time_since_last_scrape.total_seconds() > 10800  # 3 hours in seconds
-
-    def save_session(self) -> None:
-        """Save current session cookies and visited URLs."""
-        if self.page:
-            try:
-                cookies = self.page.context.cookies()
-                session_data = {
-                    'cookies': cookies,
-                    'visited_urls': list(self.visited_urls),
-                    'seen_preview_urls': list(self.seen_preview_urls),
-                    'timestamp': datetime.now().isoformat(),
-                    'last_refresh': self.last_session_refresh.isoformat() if self.last_session_refresh else None
-                }
-                with open(self.session_file, 'w') as f:
-                    json.dump(session_data, f)
-                logger.info("Session saved successfully")
-            except Exception as e:
-                logger.error(f"Failed to save session: {str(e)}")
-
-    def load_session(self) -> bool:
-        """Load previous session if it exists and is not expired."""
-        try:
-            if not os.path.exists(self.session_file):
-                return False
-                
-            with open(self.session_file, 'r') as f:
-                session_data = json.load(f)
-                
-            # Check if session is expired (24 hours)
-            session_time = datetime.fromisoformat(session_data['timestamp'])
-            if (datetime.now() - session_time).total_seconds() > 86400:
-                logger.info("Session expired, will need to login again")
-                return False
-                
-            # Load cookies
-            if self.page:
-                self.page.context.add_cookies(session_data['cookies'])
-                self.visited_urls = set(session_data['visited_urls'])
-                self.seen_preview_urls = set(session_data['seen_preview_urls'])
-                self.last_session_refresh = datetime.fromisoformat(session_data['last_refresh']) if session_data.get('last_refresh') else None
-                
-                # Verify session is still valid
-                if self.verify_login_status():
-                    self.is_logged_in = True
-                    logger.info("Session loaded and verified successfully")
-                    return True
-                else:
-                    logger.info("Session loaded but not valid, will login again")
-                    return False
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to load session: {str(e)}")
-            return False
-
-    def verify_login_status(self) -> bool:
-        """Verify if we're still logged in by checking for login indicators."""
-        if not self.page:
-            return False
-            
-        try:
-            # Check for myFT link which indicates we're logged in
-            self.page.goto("https://www.ft.com/")
-            myft_link = self.page.wait_for_selector("a[href='/myft']", timeout=5000)
-            self.is_logged_in = True
-            return True
-        except:
-            self.is_logged_in = False
-            return False
-
-    def login(self) -> bool:
-        """Log in to FT account if session is not valid."""
-        try:
-            # First check if we're already logged in
-            if self.is_logged_in:
-                logger.info("Already logged in, skipping login process")
-                return True
-
-            logger.info("Navigating to FT login page...")
-            self.page.goto("https://www.ft.com/login")
-            
-            # Wait for page to be fully loaded
-            self.page.wait_for_load_state('networkidle')
-            
-            # Enter email
-            try:
-                username_field = self.page.wait_for_selector("#enter-email")
-                username_field.fill(self.username)
-                time.sleep(1)
-            except Exception as e:
-                logger.error(f"Failed to enter username: {str(e)}")
-                return False
-
-            # Click Next button
-            try:
-                next_button = self.page.wait_for_selector("button:has-text('Next')")
-                next_button.click()
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Failed to click Next button: {str(e)}")
-                return False
-
-            # Click SSO sign in
-            try:
-                sso_button = self.page.wait_for_selector("#sso-redirect-button")
-                sso_button.click()
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Failed to click SSO button: {str(e)}")
-                return False
-
-            # University login
-            try:
-                # Wait for the university login page to load
-                self.page.wait_for_load_state('networkidle')
-                time.sleep(2)
-
-                # Find and fill username field
-                username_field = self.page.wait_for_selector("input[type='text'], input[type='email']")
-                username_field.fill(self.uni_id)
-                time.sleep(0.5)
-
-                # Find and fill password field
-                password_field = self.page.wait_for_selector("input[type='password']")
-                password_field.fill(self.password)
-                time.sleep(0.5)
-
-                # Find and click login button
-                login_button = self.page.wait_for_selector("button[type='submit']")
-                login_button.click()
-                time.sleep(2)
-            except Exception as e:
-                logger.error(f"Failed during university login: {str(e)}")
-                return False
-
-            # Verify login success
-            try:
-                self.page.wait_for_selector("a[href='/myft']", timeout=10000)
-                self.is_logged_in = True
-                self.save_session()
-                logger.info("Login successful")
-                return True
-            except Exception as e:
-                logger.error(f"Failed to verify login success: {str(e)}")
-                # Take a screenshot of the error
-                try:
-                    screenshot_path = os.path.join(self.data_dir, "login_error.png")
-                    self.page.screenshot(path=screenshot_path)
-                    logger.info(f"Saved login error screenshot to {screenshot_path}")
-                except:
-                    pass
-                return False
-
-        except Exception as e:
-            logger.error(f"Login failed: {str(e)}")
-            # Take a screenshot of the error
-            try:
-                screenshot_path = os.path.join(self.data_dir, "login_error.png")
-                self.page.screenshot(path=screenshot_path)
-                logger.info(f"Saved login error screenshot to {screenshot_path}")
-            except:
-                pass
-            return False
+            print(f"Failed to save progress: {str(e)}")
 
     def cleanup(self):
-        """Clean up resources but keep the session alive."""
-        if self.page:
-            self.save_session()
-            # Don't close the browser, just minimize the window
-            try:
-                self.page.evaluate("window.minimize()")
-            except:
-                pass
+        """Clean up resources."""
+        try:
+            if self.driver:
+                self.driver.quit()
+                self.driver = None
+                print("ChromeDriver cleaned up successfully")
+        except Exception as e:
+            print(f"Error during cleanup: {str(e)}")
+            # Force cleanup if normal cleanup fails
+            self.force_cleanup()
 
     def force_cleanup(self):
-        """Force cleanup of all resources including the browser."""
-        if self.page:
-            self.save_session()
-            self.page.close()
-        if self.browser:
-            self.browser.close()
-        if self.playwright:
-            self.playwright.stop()
-        self.page = None
-        self.browser = None
-        self.playwright = None
+        """Force cleanup of all resources."""
+        try:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+                self.driver = None
+            print("ChromeDriver force cleaned up")
+        except Exception as e:
+            print(f"Error during force cleanup: {str(e)}")
 
 def main():
     # Get credentials from .env file
